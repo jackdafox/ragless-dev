@@ -29,11 +29,14 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+
       - name: Install dependencies
-        run: pip install pip-audit
+        run: poetry install --with dev
 
       - name: Run pip-audit
-        run: pip-audit --format=json --output=vulnerabilities.json || true
+        run: poetry run pip-audit --format=json --output=vulnerabilities.json || true
 
       - name: Upload vulnerabilities
         uses: actions/upload-artifact@v4
@@ -54,8 +57,11 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+
       - name: Install dependencies
-        run: pip install -e . pytest pytest-asyncio
+        run: poetry install --with dev
 
       - name: Run tests
-        run: python -m pytest tests/ -v --tb=short
+        run: poetry run pytest tests/ -v --tb=short
