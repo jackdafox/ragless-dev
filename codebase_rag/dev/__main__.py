@@ -6,7 +6,6 @@ import argparse
 import sys
 
 from .coordinator import DevCoordinator
-from .context_builder import format_llm_prompt
 
 
 def main() -> int:
@@ -25,17 +24,19 @@ def main() -> int:
     explicit = args.files if args.files else None
 
     coordinator = DevCoordinator()
-    ctx = coordinator.get_context(query, explicit_files=explicit)
+    state = coordinator.get_context(query, explicit_files=explicit)
 
-    if ctx is None:
+    if state is None:
         print(f"No files found for: {query}", file=sys.stderr)
         return 1
 
     if args.print_context:
-        print(format_llm_prompt(ctx))
+        print(state.get("retrieval_context", ""))
     else:
-        print(f"Found {len(ctx.signatures)} signatures across {len(ctx.full_files)} files")
-        for sig in ctx.signatures:
+        sigs = state.get("extracted_signatures", [])
+        full = state.get("full_files", {})
+        print(f"Found {len(sigs)} signatures across {len(full)} files")
+        for sig in sigs:
             print(f"  {sig.file_path}:{sig.start_line} {sig.name}({', '.join(sig.params)})")
 
     return 0
