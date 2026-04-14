@@ -1,0 +1,61 @@
+name: Security & Test
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  secret-scan:
+    name: Secret Leak Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for secrets
+        uses: truffesecurity/gitleaks-action@v2
+
+  dependencies:
+    name: Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pip-audit
+
+      - name: Run pip-audit
+        run: pip-audit --format=json --output=vulnerabilities.json || true
+
+      - name: Upload vulnerabilities
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vulnerabilities
+          path: vulnerabilities.json
+          retention-days: 7
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e . pytest pytest-asyncio
+
+      - name: Run tests
+        run: python -m pytest tests/ -v --tb=short
