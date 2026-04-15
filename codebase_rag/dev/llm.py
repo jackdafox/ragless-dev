@@ -13,9 +13,12 @@ from .tools import request_file_discovery, get_file_signatures
 
 def get_llm():
     """Build ChatOpenAI instance pointing at MiniMax API."""
+    api_key = os.environ.get("MINIMAX_API_KEY", "")
+    if not api_key:
+        raise ValueError("MINIMAX_API_KEY environment variable is not set")
     return ChatOpenAI(
         model="minimax-2.7-flash",
-        openai_api_key=os.environ.get("MINIMAX_API_KEY", ""),
+        openai_api_key=api_key,
         openai_api_base="https://api.minimaxi.com/v1",
         temperature=0.2,
         max_tokens=4096,
