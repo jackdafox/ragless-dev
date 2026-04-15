@@ -65,3 +65,5 @@ jobs:
 
       - name: Run tests
         run: poetry run pytest tests/ -v --tb=short
+        env:
+          PYTHONPATH: ${{ github.workspace }}
