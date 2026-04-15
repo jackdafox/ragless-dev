@@ -33,6 +33,16 @@ poetry run rag dev "query" --files src/auth.py src/token.py
 poetry run rag dev "query" --print-context
 ```
 
+## TUI
+
+Interactive terminal interface:
+
+```bash
+poetry run python -m codebase_rag.tui
+```
+
+Requires `MINIMAX_API_KEY` environment variable.
+
 ## Architecture
 
 ```
@@ -55,6 +65,7 @@ final_response_node
 | `graph` | `StateGraph` assembly + conditional edges |
 | `tools` | ReAct agent tools (file discovery, get signatures) |
 | `llm` | MiniMax LLM + ReAct agent factory |
+| `tui` | Rich-based terminal interface (`RaglessApp`) |
 
 ## CI/CD
 
