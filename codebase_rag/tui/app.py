@@ -4,18 +4,19 @@ from __future__ import annotations
 
 import asyncio
 
-from rich.console import Console, Group
+from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 from rich.prompt import Prompt
 from rich.box import ROUNDED
+from rich.layout import Layout
 
 from .state import TUIState, Message
 
 
 class RaglessApp:
-    """Terminal TUI for ragless-dev — live-updating panels."""
+    """Terminal TUI for ragless-dev — live display above the input line."""
 
     def __init__(self):
         self.console = Console()
@@ -84,6 +85,14 @@ class RaglessApp:
             padding=(0, 1),
         )
 
+    def _render_all(self) -> list:
+        """Return panels as list for vertical stacking."""
+        return [
+            self._render_header(),
+            self._render_conversation(),
+            self._render_context(),
+        ]
+
     def _render_status(self) -> Table:
         status = "[green]● ready[/green]"
         if self.state.streaming:
@@ -98,40 +107,34 @@ class RaglessApp:
         t.add_row("msgs", str(len(self.state.messages)))
         return t
 
-    def _render_all(self) -> Group:
-        return Group(
-            self._render_header(),
-            self._render_conversation(),
-            self._render_context(),
-            self._render_status(),
-        )
+    def _print_all(self):
+        """Print all panels to console, called before each input."""
+        self.console.print()
+        for p in self._render_all():
+            self.console.print(p)
+        self.console.print(self._render_status())
 
     async def run_async(self):
         self.running = True
-        self.console.print()
-        with Live(
-            self._render_all(),
-            console=self.console,
-            refresh_per_second=8,
-            transient=False,
-        ) as live:
-            self._live = live
+        self._print_all()
 
-            while self.running:
-                try:
-                    user_input = await asyncio.get_event_loop().run_in_executor(
-                        None, lambda: Prompt.ask("[bold cyan]›[/bold cyan] ").strip()
-                    )
-                    if not user_input:
-                        continue
-                    await self._handle_input(user_input, live)
-                except KeyboardInterrupt:
-                    self.running = False
-                    self.console.print("\n[dim]Goodbye![/dim]")
-                    break
-                except EOFError:
-                    self.running = False
-                    break
+        while self.running:
+            try:
+                user_input = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: Prompt.ask("[bold cyan]›[/bold cyan] ").strip()
+                )
+                if not user_input:
+                    continue
+                await self._handle_input(user_input)
+                self._print_all()
+
+            except KeyboardInterrupt:
+                self.running = False
+                self.console.print("\n[dim]Goodbye![/dim]")
+                break
+            except EOFError:
+                self.running = False
+                break
 
     def run(self):
         try:
@@ -139,10 +142,10 @@ class RaglessApp:
         except KeyboardInterrupt:
             pass
 
-    async def _handle_input(self, user_input: str, live: Live):
+    async def _handle_input(self, user_input: str):
         self.state.messages.append(Message(role="user", content=user_input))
         self.state.streaming = True
-        live.update(self._render_all())
+        self._print_all()
 
         try:
             from codebase_rag.dev.coordinator import DevCoordinator
@@ -161,30 +164,17 @@ class RaglessApp:
             self.state.extracted_signatures = ctx.get("extracted_signatures", [])
             self.state.step = ctx.get("step", 0)
 
-            live.update(self._render_all())
-
-            self.console.print()
-            self.console.print(
-                Panel(
-                    result[:600] + ("..." if len(result) > 600 else ""),
-                    title="[bold blue]Agent[/bold blue] response",
-                    border_style="blue",
-                    box=ROUNDED,
-                    width=self.console.width,
-                )
-            )
-
         except Exception as e:
             self.state.streaming = False
             self.state.messages.append(Message(role="agent", content=f"[red]Error: {e}[/red]"))
-            live.update(self._render_all())
-            self.console.print()
-            self.console.print(
-                Panel(
-                    str(e),
-                    title="[red]Error[/red]",
-                    border_style="red",
-                    box=ROUNDED,
-                    width=self.console.width,
-                )
+
+        self._print_all()
+        self.console.print(
+            Panel(
+                self.state.messages[-1].content[:600] + ("..." if len(self.state.messages[-1].content) > 600 else ""),
+                title="[bold blue]Agent[/bold blue] response",
+                border_style="blue",
+                box=ROUNDED,
+                width=self.console.width,
             )
+        )
