@@ -40,13 +40,48 @@ def find_files(patterns: list[str], root: str | None = None) -> Iterator[str]:
 
 
 def discover_files(query: str, root: str | None = None) -> list[str]:
-    """Find relevant files for a query using keyword-based glob."""
+    """Find relevant files for a query using keyword-based glob.
+
+    Falls back to listing all .py files in the project if no keywords
+    match or glob returns nothing.
+    """
     keywords = extract_keywords(query)
     if not keywords:
-        return []
+        return _list_all_py_files(root)
 
     patterns = build_glob_patterns(keywords)
-    return list(find_files(patterns, root=root))
+    results = list(find_files(patterns, root=root))
+
+    # Fallback: if glob matched nothing, list all .py files in the project
+    if not results:
+        return _list_all_py_files(root)
+
+    return results
+
+
+def _list_all_py_files(root: str | None = None) -> list[str]:
+    """Return all .py files in the project root (non-test, non-cache)."""
+    if root is None:
+        root = os.getcwd()
+
+    skip_dirs = {"__pycache__", ".git", ".github", "tests", ".pytest_cache", ".claude"}
+    skip_prefixes = ("test_", "_")
+
+    results = []
+    for path, _, filenames in os.walk(root):
+        # Skip hidden dirs and test dirs
+        parts = path.split(os.sep)
+        if any(s in parts for s in skip_dirs):
+            continue
+        for fn in filenames:
+            if fn.startswith("."):
+                continue
+            if fn.startswith(skip_prefixes):
+                continue
+            if fn.endswith(".py"):
+                results.append(os.path.join(path, fn))
+
+    return results
 
 
 def discover_files_explicit(file_paths: list[str], root: str | None = None) -> list[str]:
