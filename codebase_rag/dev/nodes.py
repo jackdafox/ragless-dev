@@ -47,7 +47,10 @@ def build_retrieval_context_node(state: RagDevState) -> dict:
     sigs = state.get("extracted_signatures", [])
 
     if not files:
-        retrieval_context = f"No files found for query: {query}"
+        retrieval_context = (
+            "No files matched the query. Answer using your own knowledge "
+            f"to help with: {query}"
+        )
     else:
         ctx = build_context(query, files, sigs)
         retrieval_context = format_llm_prompt(ctx)
@@ -112,11 +115,4 @@ def replan_node(state: RagDevState) -> dict:
 def final_response_node(state: RagDevState) -> dict:
     """Return the final output string."""
     retrieval_context = state.get("retrieval_context", "")
-    sigs = state.get("extracted_signatures", [])
-    files = state.get("discovered_files", [])
-
-    output = retrieval_context
-    if not retrieval_context or retrieval_context.startswith("No files found"):
-        output = f"No files found for query: {state['query']}"
-
-    return {"retrieval_context": output}
+    return {"retrieval_context": retrieval_context}
