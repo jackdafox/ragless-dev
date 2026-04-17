@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
+from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
 from langgraph.prebuilt import create_react_agent
 
 from .tools import request_file_discovery, get_file_signatures
+
+# Load .env from project root
+_dotenv = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(_dotenv)
 
 
 def get_llm():

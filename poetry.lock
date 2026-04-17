@@ -1362,6 +1362,21 @@ docs = ["sphinx (>=5.3)", "sphinx-rtd-theme (>=1)"]
 testing = ["coverage (>=6.2)", "hypothesis (>=5.7.1)"]
 
 [[package]]
+name = "python-dotenv"
+version = "1.2.2"
+description = "Read key-value pairs from a .env file and set them as environment variables"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "python_dotenv-1.2.2-py3-none-any.whl", hash = "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a"},
+    {file = "python_dotenv-1.2.2.tar.gz", hash = "sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3"},
+]
+
+[package.extras]
+cli = ["click (>=5.0)"]
+
+[[package]]
 name = "pyyaml"
 version = "6.0.3"
 description = "YAML parser and emitter for Python"
@@ -2200,4 +2215,4 @@ dev = ["pip-audit", "pytest", "pytest-asyncio"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "40ca619b97f8782ce44aae854e44fc649f3f1bb224766f9f9a4cebbc9673534c"
+content-hash = "d8d90e2b0c28915d384f8797cb8c7c873a44fcc4436492538e22fcb76b0a401c"
