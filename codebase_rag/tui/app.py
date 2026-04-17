@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from rich.console import Console
+from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
@@ -15,7 +15,7 @@ from .state import TUIState, Message
 
 
 class RaglessApp:
-    """Terminal TUI for ragless-dev with live-updating display."""
+    """Terminal TUI for ragless-dev — live-updating panels."""
 
     def __init__(self):
         self.console = Console()
@@ -23,41 +23,98 @@ class RaglessApp:
         self.running = False
         self._live: Live | None = None
 
-    def _render_all(self) -> Table:
-        """Render everything as a single table for Live display."""
+    def _render_header(self) -> Panel:
         status = "[green]● ready[/green]"
         if self.state.streaming:
             status = "[yellow]◐ processing...[/yellow]"
+        return Panel(
+            "[bold blue]ragless-dev[/bold blue] — file-based RAG with LangGraph + MiniMax\n"
+            f"status: {status}   |   step: {self.state.step}   |   "
+            f"files: {len(self.state.discovered_files)}   |   "
+            f"sigs: {len(self.state.extracted_signatures)}   |   "
+            f"msgs: {len(self.state.messages)}",
+            title="[b]ragless-dev[/b]",
+            border_style="blue",
+            box=ROUNDED,
+            height=5,
+            padding=(0, 1),
+        )
 
-        msgs = self.state.messages
-        last_msg = msgs[-1].content[:200] if msgs else ""
+    def _render_conversation(self) -> Panel:
+        if not self.state.messages:
+            lines = ["[dim]No messages yet — type a query to get started.[/dim]"]
+        else:
+            lines = []
+            for msg in self.state.messages[-10:]:
+                role = "[bold green]You[/bold green]" if msg.role == "user" else "[bold blue]Agent[/bold blue]"
+                content = msg.content[:300] + ("..." if len(msg.content) > 300 else "")
+                lines.append(f"{role}: {content}")
+                lines.append("")
+        return Panel(
+            "\n".join(lines) or "[dim]No messages[/dim]",
+            title=f"[b]Conversation[/b] ({len(self.state.messages)} msgs)",
+            border_style="green",
+            box=ROUNDED,
+            height=14,
+            padding=(0, 1),
+        )
 
-        table = Table(box=None, padding=(0, 1), show_header=False)
-        table.add_column("field", style="dim", width=14)
-        table.add_column("value", max_width=80)
-        table.add_row("[bold blue]ragless-dev[/bold blue]", "file-based RAG with LangGraph + MiniMax")
-        table.add_row("─" * 30, "─" * 30)
-        table.add_row("status", status)
-        table.add_row("step", str(self.state.step))
-        table.add_row("files", str(len(self.state.discovered_files)))
-        table.add_row("sigs", str(len(self.state.extracted_signatures)))
-        table.add_row("msgs", str(len(msgs)))
-        if last_msg:
-            table.add_row("last", last_msg)
+    def _render_context(self) -> Panel:
+        if not self.state.discovered_files:
+            lines = ["[dim]No files discovered yet.[/dim]"]
+        else:
+            lines = [
+                f"[bold]{len(self.state.discovered_files)}[/bold] files, "
+                f"[bold]{len(self.state.extracted_signatures)}[/bold] signatures",
+            ]
+            for fp in self.state.discovered_files[-6:]:
+                short = fp.split("/")[-1]
+                lines.append(f"  📄 [dim]{short}[/dim]")
+            if self.state.extracted_signatures:
+                lines.append("  [dim]Top signatures:[/dim]")
+                for sig in self.state.extracted_signatures[:5]:
+                    name = sig.get("name", "unknown") if isinstance(sig, dict) else "unknown"
+                    lines.append(f"    [dim]•[/dim] {name}()")
+        return Panel(
+            "\n".join(lines),
+            title="[b]File Context[/b]",
+            border_style="yellow",
+            box=ROUNDED,
+            height=10,
+            padding=(0, 1),
+        )
 
-        return table
+    def _render_status(self) -> Table:
+        status = "[green]● ready[/green]"
+        if self.state.streaming:
+            status = "[yellow]◐ processing...[/yellow]"
+        t = Table(box=ROUNDED, padding=(0, 2), show_header=False)
+        t.add_column("k", style="dim")
+        t.add_column("v")
+        t.add_row("status", status)
+        t.add_row("step", str(self.state.step))
+        t.add_row("files", str(len(self.state.discovered_files)))
+        t.add_row("sigs", str(len(self.state.extracted_signatures)))
+        t.add_row("msgs", str(len(self.state.messages)))
+        return t
+
+    def _render_all(self) -> Group:
+        return Group(
+            self._render_header(),
+            self._render_conversation(),
+            self._render_context(),
+            self._render_status(),
+        )
 
     async def run_async(self):
-        """Run the TUI with a persistent Live display."""
         self.running = True
-
-        intro = (
-            "[bold blue]ragless-dev[/bold blue] — file-based RAG with LangGraph\n"
-            "[dim]Type your query and press Enter. Ctrl+C to exit.[/dim]\n"
-        )
-        self.console.print(intro)
-
-        with Live(self._render_all(), console=self.console, refresh_per_second=8, transient=False) as live:
+        self.console.print()
+        with Live(
+            self._render_all(),
+            console=self.console,
+            refresh_per_second=8,
+            transient=False,
+        ) as live:
             self._live = live
 
             while self.running:
@@ -68,7 +125,6 @@ class RaglessApp:
                     if not user_input:
                         continue
                     await self._handle_input(user_input, live)
-
                 except KeyboardInterrupt:
                     self.running = False
                     self.console.print("\n[dim]Goodbye![/dim]")
@@ -84,7 +140,6 @@ class RaglessApp:
             pass
 
     async def _handle_input(self, user_input: str, live: Live):
-        """Handle query: add user message, run coordinator, show agent response."""
         self.state.messages.append(Message(role="user", content=user_input))
         self.state.streaming = True
         live.update(self._render_all())
@@ -108,15 +163,13 @@ class RaglessApp:
 
             live.update(self._render_all())
 
-            # Show agent response in a panel after update
             self.console.print()
             self.console.print(
                 Panel(
-                    result[:800] + ("..." if len(result) > 800 else ""),
+                    result[:600] + ("..." if len(result) > 600 else ""),
                     title="[bold blue]Agent[/bold blue] response",
                     border_style="blue",
                     box=ROUNDED,
-                    padding=(0, 1),
                     width=self.console.width,
                 )
             )
