@@ -20,9 +20,10 @@ def get_llm() -> ChatAnthropic:
         raise ValueError("MINIMAX_API_KEY environment variable is not set")
     return ChatAnthropic(
         model="MiniMax-M2.7",
-        anthropic_api_key=api_key,
+        api_key=api_key,
+        base_url="https://api.minimax.io/anthropic",
         temperature=0.2,
-        max_tokens=4096,
+        max_tokens_to_sample=4096,
     )
 
 
