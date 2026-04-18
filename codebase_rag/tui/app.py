@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import sys
+
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Static, RichLog, Input
 from textual.containers import VerticalScroll, Container
@@ -44,9 +47,10 @@ class RaglessApp(App):
         Binding("ctrl-q", "quit", "Quit", show=False),
     ]
 
-    def __init__(self):
+    def __init__(self, root: str | None = None):
         super().__init__()
         self.state = TUIState()
+        self.root = root or os.getcwd()
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -57,7 +61,8 @@ class RaglessApp(App):
 
     def on_mount(self):
         log = self.query_one("#conversation", RichLog)
-        log.write("[bold blue]ragless-dev[/bold blue]  ·  file-based RAG with LangGraph + MiniMax")
+        root_display = self.root if len(self.root) < 60 else "…" + self.root[-(60):]
+        log.write(f"[bold blue]ragless-dev[/bold blue]  ·  [dim]{root_display}[/dim]")
         log.write("")
         log.write("[dim]Type a query and press Enter. Ctrl+C to quit.[/dim]")
         log.write("")
@@ -109,7 +114,7 @@ class RaglessApp(App):
     def _run_query_in_thread(self, query: str, log: RichLog):
         try:
             from codebase_rag.dev.coordinator import DevCoordinator
-            coordinator = DevCoordinator()
+            coordinator = DevCoordinator(root=self.root)
             result = coordinator.handle_query(query)
             ctx = coordinator.get_context(query)
 
