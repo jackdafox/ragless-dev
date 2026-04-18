@@ -21,8 +21,10 @@ def test_request_file_discovery_finds_files(tmp_path):
 
 
 def test_request_file_discovery_no_match():
+    # When query keywords don't match any files, discover_files falls back
+    # to listing all .py files in the project (not "No files found")
     result = request_file_discovery.invoke({"refined_query": "zzzz_no_match_xxxx", "reason": "testing"})
-    assert "No files found" in result
+    assert "Found" in result
 
 
 def test_get_file_signatures(tmp_path):

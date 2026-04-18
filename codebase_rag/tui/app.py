@@ -1,112 +1,140 @@
-"""Main TUI application for ragless-dev."""
+"""Ragless TUI — Textual app with Claude Code-inspired interface."""
 
 from __future__ import annotations
 
-import asyncio
+import os
+import sys
 
-from rich.console import Console
-from rich.live import Live
-from rich.panel import Panel
-from rich.table import Table
-from rich.prompt import Prompt
-from rich.scroll import Scroll
+from textual.app import App, ComposeResult
+from textual.widgets import Header, Static, RichLog, Input
+from textual.containers import VerticalScroll, Container
+from textual.binding import Binding
+from textual.message import Message
+from textual import on
 
-from .state import TUIState, Message
+from .state import TUIState, Message as TuiMessage
 
 
-class RaglessApp:
-    """Terminal TUI for ragless-dev with persistent Live display."""
+class RaglessApp(App):
+    """Terminal TUI for ragless-dev — built with Textual."""
 
-    def __init__(self):
-        self.console = Console()
+    CSS = """
+    Screen {
+        background: $surface;
+    }
+    #conversation {
+        height: 1fr;
+        border: none;
+        padding: 0 1;
+    }
+    #context-bar {
+        dock: bottom;
+        height: 3;
+        background: $panel;
+        padding: 0 1;
+        border-top: solid $border;
+    }
+    #input-bar {
+        dock: bottom;
+        height: 3;
+        background: $surface;
+        padding: 0 1;
+    }
+    """
+
+    BINDINGS = [
+        Binding("ctrl-c", "quit", "Quit", show=False),
+        Binding("ctrl-q", "quit", "Quit", show=False),
+    ]
+
+    def __init__(self, root: str | None = None):
+        super().__init__()
         self.state = TUIState()
-        self.running = False
-        self._live: Live | None = None
+        self.root = root or os.getcwd()
 
-    def _build_layout(self) -> Table:
-        """Build the full status table shown in the Live display."""
-        table = Table(title="ragless-dev TUI", box=None, padding=(0, 1))
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield RichLog(id="conversation", highlight=False, markup=True)
+        yield Static("", id="context-bar")
+        with Container(id="input-bar"):
+            yield Input(placeholder="Ask about your codebase…", id="user-input")
 
-        status = "[green]ready[/green]"
+    def on_mount(self):
+        log = self.query_one("#conversation", RichLog)
+        root_display = self.root if len(self.root) < 60 else "…" + self.root[-(60):]
+        log.write(f"[bold blue]ragless-dev[/bold blue]  ·  [dim]{root_display}[/dim]")
+        log.write("")
+        log.write("[dim]Type a query and press Enter. Ctrl+C to quit.[/dim]")
+        log.write("")
+        self.query_one("#user-input", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted):
+        user_input = event.value.strip()
+        if not user_input:
+            return
+
+        log = self.query_one("#conversation", RichLog)
+        input_widget = self.query_one("#user-input", Input)
+        input_widget.clear()
+
+        # Add user message
+        self.state.messages.append(TuiMessage(role="user", content=user_input))
+        log.write(f"[green]›[/green] {user_input}")
+        self._update_context_bar()
+        self._process_query(user_input, log)
+
+    def _update_context_bar(self):
+        bar = self.query_one("#context-bar", Static)
+        parts = []
+
         if self.state.streaming:
-            status = "[yellow]streaming...[/yellow]"
+            parts.append("[yellow]◐ processing…[/yellow]")
+        else:
+            parts.append("[green]●[/green]")
 
-        msgs = self.state.messages
-        last_msg = msgs[-1].content[:300] if msgs else ""
+        parts.extend([
+            f"[dim]step:{self.state.step}[/dim]",
+            f"[dim]files:{len(self.state.discovered_files)}[/dim]",
+            f"[dim]sigs:{len(self.state.extracted_signatures)}[/dim]",
+            f"[dim]msgs:{len(self.state.messages)}[/dim]",
+        ])
+        if self.state.discovered_files:
+            fps = ", ".join(fp.split("/")[-1] for fp in self.state.discovered_files[-4:])
+            parts.append(f"[dim]📁 {fps}[/dim]")
+        bar.update("  ".join(parts))
 
-        table.add_column("field", style="dim", width=12)
-        table.add_column("value")
-
-        table.add_row("status", status)
-        table.add_row("step", str(self.state.step))
-        table.add_row("files", str(len(self.state.discovered_files)))
-        table.add_row("sigs", str(len(self.state.extracted_signatures)))
-        table.add_row("msgs", str(len(msgs)))
-        if last_msg:
-            table.add_row("last", last_msg)
-
-        return table
-
-    async def run_async(self):
-        """Run the TUI with a persistent Live display."""
-        self.running = True
-
-        with Live(self._build_layout(), console=self.console, refresh_per_second=4) as live:
-            self._live = live
-
-            intro = (
-                "[bold blue]ragless-dev[/bold blue] — file-based RAG with LangGraph\n"
-                "[dim]Press Ctrl+C to exit. Type a query and press Enter.[/dim]"
-            )
-            self.console.print(intro)
-
-            while self.running:
-                try:
-                    user_input = await asyncio.get_event_loop().run_in_executor(
-                        None, lambda: Prompt.ask("[bold cyan]>[/bold cyan] ").strip())
-                    if not user_input:
-                        continue
-                    await self._handle_input(user_input, live)
-                except KeyboardInterrupt:
-                    self.running = False
-                    self.console.print("\n[dim]Goodbye![/dim]")
-                    break
-                except EOFError:
-                    self.running = False
-                    break
-
-    def run(self):
-        try:
-            asyncio.run(self.run_async())
-        except KeyboardInterrupt:
-            pass
-
-    async def _handle_input(self, user_input: str, live: Live):
-        """Handle query, update state, refresh Live display."""
-        self.state.messages.append(Message(role="user", content=user_input))
+    def _process_query(self, query: str, log: RichLog):
         self.state.streaming = True
-        live.update(self._build_layout())
+        log.write("[yellow]◐[/yellow] processing…")
+        self._update_context_bar()
+        import threading
+        t = threading.Thread(target=self._run_query_in_thread, args=(query, log), daemon=True)
+        t.start()
 
+    def _run_query_in_thread(self, query: str, log: RichLog):
         try:
             from codebase_rag.dev.coordinator import DevCoordinator
-            coordinator = DevCoordinator()
+            coordinator = DevCoordinator(root=self.root)
+            result = coordinator.handle_query(query)
+            ctx = coordinator.get_context(query)
 
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None, lambda: coordinator.handle_query(user_input)
-            )
+            def update():
+                self.state.messages.append(TuiMessage(role="agent", content=result))
+                self.state.streaming = False
+                self.state.discovered_files = ctx.get("discovered_files", [])
+                self.state.extracted_signatures = ctx.get("extracted_signatures", [])
+                self.state.step = ctx.get("step", 0)
+                log.write("")
+                for line in result.split("\n")[:20]:
+                    log.write(f"  [blue]▌[/blue] {line}")
+                if len(result.split("\n")) > 20:
+                    log.write(f"  [dim]▌ ... ({len(result.split(chr(10)))-20} more lines)[/dim]")
+                self._update_context_bar()
 
-            self.state.messages.append(Message(role="agent", content=result))
-            self.state.streaming = False
-
-            # Update from coordinator state
-            ctx = coordinator.get_context(user_input)
-            self.state.discovered_files = ctx.get("discovered_files", [])
-            self.state.extracted_signatures = ctx.get("extracted_signatures", [])
-            self.state.step = ctx.get("step", 0)
-
+            self.call_from_thread(update)
         except Exception as e:
-            self.state.streaming = False
-            self.state.messages.append(Message(role="agent", content=f"[red]Error: {e}[/red]"))
-
-        live.update(self._build_layout())
+            def update_error():
+                self.state.streaming = False
+                log.write(f"\n  [red]✗ Error: {e}[/red]")
+                self._update_context_bar()
+            self.call_from_thread(update_error)
