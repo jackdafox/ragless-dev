@@ -37,10 +37,6 @@ class RaglessApp(App):
         background: $surface;
         padding: 0 1;
     }
-    #input-prompt {
-        color: $accent;
-        bold: true;
-    }
     """
 
     BINDINGS = [
