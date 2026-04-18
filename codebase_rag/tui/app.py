@@ -99,6 +99,9 @@ class RaglessApp(App):
         bar.update("  ".join(parts))
 
     def _process_query(self, query: str, log: RichLog):
+        self.run_worker(self._do_process_query(query, log), exclusive=True)
+
+    async def _do_process_query(self, query: str, log: RichLog):
         self.state.streaming = True
         log.write("")
 
