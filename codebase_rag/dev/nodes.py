@@ -13,6 +13,16 @@ from .state import RagDevState
 
 MAX_STEPS = 3
 
+# Cached agent — built once per process
+_agent = None
+
+
+def _get_agent():
+    global _agent
+    if _agent is None:
+        _agent = build_agent()
+    return _agent
+
 
 def file_discover_node(state: RagDevState) -> dict:
     """Discover files based on the query."""
@@ -64,7 +74,7 @@ def build_retrieval_context_node(state: RagDevState) -> dict:
 
 def agent_node(state: RagDevState) -> dict:
     """Run the ReAct agent with current context."""
-    agent = build_agent()
+    agent = _get_agent()
 
     systemPrompt = (
         "You are a codebase reasoning assistant. The user wants help with a coding task. "
