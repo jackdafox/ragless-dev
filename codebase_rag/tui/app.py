@@ -80,12 +80,19 @@ class RaglessApp(App):
 
     def _update_context_bar(self):
         bar = self.query_one("#context-bar", Static)
-        parts = [
+        parts = []
+
+        if self.state.streaming:
+            parts.append("[yellow]◐ processing…[/yellow]")
+        else:
+            parts.append("[green]●[/green]")
+
+        parts.extend([
             f"[dim]step:{self.state.step}[/dim]",
             f"[dim]files:{len(self.state.discovered_files)}[/dim]",
             f"[dim]sigs:{len(self.state.extracted_signatures)}[/dim]",
             f"[dim]msgs:{len(self.state.messages)}[/dim]",
-        ]
+        ])
         if self.state.discovered_files:
             fps = ", ".join(fp.split("/")[-1] for fp in self.state.discovered_files[-4:])
             parts.append(f"[dim]📁 {fps}[/dim]")
