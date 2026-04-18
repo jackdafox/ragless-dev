@@ -99,34 +99,35 @@ class RaglessApp(App):
         bar.update("  ".join(parts))
 
     def _process_query(self, query: str, log: RichLog):
-        self.run_worker(self._do_process_query(query, log), exclusive=True)
-
-    async def _do_process_query(self, query: str, log: RichLog):
         self.state.streaming = True
-        log.write("")
+        import threading
+        t = threading.Thread(target=self._run_query_in_thread, args=(query, log), daemon=True)
+        t.start()
 
+    def _run_query_in_thread(self, query: str, log: RichLog):
         try:
             from codebase_rag.dev.coordinator import DevCoordinator
-
             coordinator = DevCoordinator()
             result = coordinator.handle_query(query)
-
-            self.state.messages.append(TuiMessage(role="agent", content=result))
-            self.state.streaming = False
-
             ctx = coordinator.get_context(query)
-            self.state.discovered_files = ctx.get("discovered_files", [])
-            self.state.extracted_signatures = ctx.get("extracted_signatures", [])
-            self.state.step = ctx.get("step", 0)
 
-            log.write("")
-            for line in result.split("\n")[:20]:
-                log.write(f"  [blue]▌[/blue] {line}")
-            if len(result.split("\n")) > 20:
-                log.write(f"  [dim]▌ ... ({len(result.split(chr(10)))-20} more lines)[/dim]")
+            def update():
+                self.state.messages.append(TuiMessage(role="agent", content=result))
+                self.state.streaming = False
+                self.state.discovered_files = ctx.get("discovered_files", [])
+                self.state.extracted_signatures = ctx.get("extracted_signatures", [])
+                self.state.step = ctx.get("step", 0)
+                log.write("")
+                for line in result.split("\n")[:20]:
+                    log.write(f"  [blue]▌[/blue] {line}")
+                if len(result.split("\n")) > 20:
+                    log.write(f"  [dim]▌ ... ({len(result.split(chr(10)))-20} more lines)[/dim]")
+                self._update_context_bar()
 
+            self.call_from_thread(update)
         except Exception as e:
-            self.state.streaming = False
-            log.write(f"\n  [red]✗ Error: {e}[/red]")
-
-        self._update_context_bar()
+            def update_error():
+                self.state.streaming = False
+                log.write(f"\n  [red]✗ Error: {e}[/red]")
+                self._update_context_bar()
+            self.call_from_thread(update_error)
