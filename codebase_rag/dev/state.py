@@ -16,6 +16,7 @@ class RagDevState(TypedDict):
     extracted_signatures: list[FunctionSignature]
     full_files: dict[str, str]
     retrieval_context: str
+    final_response: str
     needs_more_files: bool
     replan_reason: str
     step: int

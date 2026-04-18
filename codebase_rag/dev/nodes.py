@@ -139,7 +139,25 @@ def replan_node(state: RagDevState) -> dict:
 
 
 def final_response_node(state: RagDevState) -> dict:
+    """Generate a natural language response from the retrieval context."""
     def _run(state):
+        from .llm import get_llm
         retrieval_context = state.get("retrieval_context", "")
-        return {"retrieval_context": retrieval_context}
+        query = state.get("query", "")
+
+        llm = get_llm()
+        response = llm.invoke([
+            HumanMessage(content=(
+                "You are a helpful coding assistant. Based on the following "
+                "codebase information, answer the user's query in a friendly, "
+                "concise way. If no relevant code was found, say so.\n\n"
+                f"Query: {query}\n\n"
+                f"Codebase context:\n{retrieval_context}\n\n"
+                "Answer:"
+            ))
+        ])
+
+        answer = response.content if hasattr(response, "content") else str(response)
+        return {"final_response": answer}
+
     return _timeit("final_response_node", _run, state)
