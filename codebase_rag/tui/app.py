@@ -100,6 +100,8 @@ class RaglessApp(App):
 
     def _process_query(self, query: str, log: RichLog):
         self.state.streaming = True
+        log.write("[yellow]◐[/yellow] processing…")
+        self._update_context_bar()
         import threading
         t = threading.Thread(target=self._run_query_in_thread, args=(query, log), daemon=True)
         t.start()
