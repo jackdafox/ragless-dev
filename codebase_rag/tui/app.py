@@ -115,20 +115,20 @@ class RaglessApp(App):
         try:
             from codebase_rag.dev.coordinator import DevCoordinator
             coordinator = DevCoordinator(root=self.root)
-            result = coordinator.handle_query(query)
             ctx = coordinator.get_context(query)
+            answer = ctx.get("final_response") or ctx.get("retrieval_context", "")
 
             def update():
-                self.state.messages.append(TuiMessage(role="agent", content=result))
+                self.state.messages.append(TuiMessage(role="agent", content=answer))
                 self.state.streaming = False
                 self.state.discovered_files = ctx.get("discovered_files", [])
                 self.state.extracted_signatures = ctx.get("extracted_signatures", [])
                 self.state.step = ctx.get("step", 0)
                 log.write("")
-                for line in result.split("\n")[:20]:
+                for line in answer.split("\n")[:20]:
                     log.write(f"  [blue]▌[/blue] {line}")
-                if len(result.split("\n")) > 20:
-                    log.write(f"  [dim]▌ ... ({len(result.split(chr(10)))-20} more lines)[/dim]")
+                if len(answer.split("\n")) > 20:
+                    log.write(f"  [dim]▌ ... ({len(answer.split(chr(10)))-20} more lines)[/dim]")
                 self._update_context_bar()
 
             self.call_from_thread(update)
