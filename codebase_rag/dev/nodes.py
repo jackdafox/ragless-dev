@@ -19,6 +19,9 @@ MAX_STEPS = 3
 # Cached agent — built once per process
 _agent = None
 
+# Streaming callback — prints chunks to stderr as they arrive
+_stream_callback = os.environ.get("STREAM_OUTPUT", "1") == "1"
+
 
 def _get_agent():
     global _agent
@@ -139,33 +142,40 @@ def replan_node(state: RagDevState) -> dict:
 
 
 def final_response_node(state: RagDevState) -> dict:
-    """Generate a natural language response from the retrieval context."""
+    """Generate a natural language response from the retrieval context using streaming."""
     def _run(state):
         from .llm import get_llm
         retrieval_context = state.get("retrieval_context", "")
         query = state.get("query", "")
 
         llm = get_llm()
-        response = llm.invoke([
-            HumanMessage(content=(
-                "You are a helpful coding assistant. Based on the following "
-                "codebase information, answer the user's query in a friendly, "
-                "concise way. If no relevant code was found, say so.\n\n"
-                f"Query: {query}\n\n"
-                f"Codebase context:\n{retrieval_context}\n\n"
-                "Answer:"
-            ))
-        ])
+        prompt = (
+            "You are a helpful coding assistant. Based on the following "
+            "codebase information, answer the user's query in a friendly, "
+            "concise way. If no relevant code was found, say so.\n\n"
+            f"Query: {query}\n\n"
+            f"Codebase context:\n{retrieval_context}\n\n"
+            "Answer:"
+        )
 
-        # Handle both string and block-list response formats
-        raw = response.content if hasattr(response, "content") else str(response)
-        if isinstance(raw, list):
-            # Extract text blocks from MiniMax's block format
-            answer = " ".join(
-                b["text"] for b in raw if isinstance(b, dict) and b.get("type") == "text"
-            )
+        if _stream_callback:
+            # Stream chunks to stderr as they arrive
+            chunks = []
+            for chunk in llm.stream([HumanMessage(content=prompt)]):
+                if hasattr(chunk, "content") and chunk.content:
+                    text = chunk.content if isinstance(chunk.content, str) else ""
+                    if text:
+                        print(text, end="", flush=True, file=os.sys.stderr)
+                        chunks.append(text)
+            print(flush=True, file=os.sys.stderr)
+            answer = "".join(chunks)
         else:
-            answer = str(raw)
+            response = llm.invoke([HumanMessage(content=prompt)])
+            raw = response.content if hasattr(response, "content") else str(response)
+            if isinstance(raw, list):
+                answer = " ".join(b["text"] for b in raw if isinstance(b, dict) and b.get("type") == "text")
+            else:
+                answer = str(raw)
 
         return {"final_response": answer}
 
