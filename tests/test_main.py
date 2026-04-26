@@ -2,7 +2,7 @@
 
 import sys
 import os
-from unittest.mock import patch
+from contextlib import redirect_stderr
 import pytest
 
 
@@ -19,7 +19,9 @@ def test_main_no_args_returns_error(tmp_path):
         os.chdir(tmp_path)
         sys.argv = ["rag"]
         from codebase_rag.dev.__main__ import main
-        with patch("sys.stderr", new_callable=lambda: __import__("io").StringIO) as mock_err:
+        from io import StringIO
+        mock_err = StringIO()
+        with redirect_stderr(mock_err):
             ret = main()
         assert ret == 1
     finally:
