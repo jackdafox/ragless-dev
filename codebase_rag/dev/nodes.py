@@ -157,7 +157,16 @@ def final_response_node(state: RagDevState) -> dict:
             ))
         ])
 
-        answer = response.content if hasattr(response, "content") else str(response)
+        # Handle both string and block-list response formats
+        raw = response.content if hasattr(response, "content") else str(response)
+        if isinstance(raw, list):
+            # Extract text blocks from MiniMax's block format
+            answer = " ".join(
+                b["text"] for b in raw if isinstance(b, dict) and b.get("type") == "text"
+            )
+        else:
+            answer = str(raw)
+
         return {"final_response": answer}
 
     return _timeit("final_response_node", _run, state)
