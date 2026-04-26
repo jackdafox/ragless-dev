@@ -144,6 +144,10 @@ def replan_node(state: RagDevState) -> dict:
 def final_response_node(state: RagDevState) -> dict:
     """Generate a natural language response from the retrieval context using streaming."""
     def _run(state):
+        # Skip if TUI is handling its own streaming
+        if state.get("skip_final_response"):
+            return {"final_response": ""}
+
         from .llm import get_llm
         retrieval_context = state.get("retrieval_context", "")
         query = state.get("query", "")
@@ -158,24 +162,12 @@ def final_response_node(state: RagDevState) -> dict:
             "Answer:"
         )
 
-        if _stream_callback:
-            # Stream chunks to stderr as they arrive
-            chunks = []
-            for chunk in llm.stream([HumanMessage(content=prompt)]):
-                if hasattr(chunk, "content") and chunk.content:
-                    text = chunk.content if isinstance(chunk.content, str) else ""
-                    if text:
-                        print(text, end="", flush=True, file=os.sys.stderr)
-                        chunks.append(text)
-            print(flush=True, file=os.sys.stderr)
-            answer = "".join(chunks)
+        response = llm.invoke([HumanMessage(content=prompt)])
+        raw = response.content if hasattr(response, "content") else str(response)
+        if isinstance(raw, list):
+            answer = " ".join(b["text"] for b in raw if isinstance(b, dict) and b.get("type") == "text")
         else:
-            response = llm.invoke([HumanMessage(content=prompt)])
-            raw = response.content if hasattr(response, "content") else str(response)
-            if isinstance(raw, list):
-                answer = " ".join(b["text"] for b in raw if isinstance(b, dict) and b.get("type") == "text")
-            else:
-                answer = str(raw)
+            answer = str(raw)
 
         return {"final_response": answer}
 

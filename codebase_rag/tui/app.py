@@ -121,7 +121,7 @@ class RaglessApp(App):
             from codebase_rag.dev.llm import get_llm
 
             coordinator = DevCoordinator(root=self.root)
-            ctx = coordinator.get_context(query)
+            ctx = coordinator.get_context(query, skip_final_response=True)
 
             # Stream the final_response in real-time to the log
             if _STREAM_OUTPUT:
@@ -150,11 +150,9 @@ class RaglessApp(App):
                     if hasattr(chunk, "content") and chunk.content:
                         text = chunk.content if isinstance(chunk.content, str) else ""
                         if text:
-                            chunks.append(text)
-                            def write_chunk():
-                                for c in chunks:
-                                    log.write(f"  [blue]▌[/blue] {c}")
-                            self.call_from_thread(write_chunk)
+                            def write_line():
+                                log.write(f"  [blue]▌[/blue] {text}")
+                            self.call_from_thread(write_line)
             else:
                 answer = ctx.get("final_response") or ctx.get("retrieval_context", "")
 

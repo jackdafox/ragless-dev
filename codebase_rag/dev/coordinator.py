@@ -20,7 +20,7 @@ class DevCoordinator:
             key_parts.extend(explicit_files)
         return hashlib.md5("|".join(key_parts).encode()).hexdigest()
 
-    def get_context(self, query: str, explicit_files: list[str] | None = None):
+    def get_context(self, query: str, explicit_files: list[str] | None = None, skip_final_response: bool = False):
         """Run the graph and return final state. Caches result for repeated queries."""
         key = self._cache_key(query, explicit_files)
         if key in self._cache:
@@ -31,6 +31,8 @@ class DevCoordinator:
             "extracted_signatures": [],
             "full_files": {},
             "retrieval_context": "",
+            "final_response": "",
+            "skip_final_response": skip_final_response,
             "needs_more_files": False,
             "replan_reason": "",
             "step": 0,

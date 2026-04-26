@@ -17,6 +17,7 @@ class RagDevState(TypedDict):
     full_files: dict[str, str]
     retrieval_context: str
     final_response: str
+    skip_final_response: bool  # True when TUI handles its own streaming
     needs_more_files: bool
     replan_reason: str
     step: int
