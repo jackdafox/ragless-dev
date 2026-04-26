@@ -14,8 +14,8 @@ class DevCoordinator:
         self.root = root
         self._cache: dict[str, dict] = {}
 
-    def _cache_key(self, query: str, explicit_files: list[str] | None = None) -> str:
-        key_parts = [query]
+    def _cache_key(self, query: str, explicit_files: list[str] | None = None, skip_final_response: bool = False) -> str:
+        key_parts = [query, str(skip_final_response)]
         if explicit_files:
             key_parts.extend(explicit_files)
         return hashlib.md5("|".join(key_parts).encode()).hexdigest()
