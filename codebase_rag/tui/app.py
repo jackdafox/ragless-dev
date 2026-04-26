@@ -115,6 +115,7 @@ class RaglessApp(App):
         t.start()
 
     def _run_query_in_thread(self, query: str, log: RichLog):
+        import traceback
         try:
             from codebase_rag.dev.coordinator import DevCoordinator
 
@@ -126,21 +127,23 @@ class RaglessApp(App):
             from codebase_rag.dev.llm import get_llm
 
             retrieval_context = ctx.get("retrieval_context", "")
-            llm = get_llm()
-            response = llm.invoke([HumanMessage(content=(
-                "You are a helpful coding assistant. Based on the following "
-                "codebase information, answer the user's query in a friendly, "
-                "concise way. If no relevant code was found, say so.\n\n"
-                f"Query: {query}\n\n"
-                f"Codebase context:\n{retrieval_context}\n\n"
-                "Answer:"
-            ))])
+            answer = retrieval_context
+            if retrieval_context:
+                llm = get_llm()
+                response = llm.invoke([HumanMessage(content=(
+                    "You are a helpful coding assistant. Based on the following "
+                    "codebase information, answer the user's query in a friendly, "
+                    "concise way. If no relevant code was found, say so.\n\n"
+                    f"Query: {query}\n\n"
+                    f"Codebase context:\n{retrieval_context}\n\n"
+                    "Answer:"
+                ))])
 
-            raw = response.content if hasattr(response, "content") else str(response)
-            if isinstance(raw, list):
-                answer = " ".join(b["text"] for b in raw if isinstance(b, dict) and b.get("type") == "text")
-            else:
-                answer = str(raw)
+                raw = response.content if hasattr(response, "content") else str(response)
+                if isinstance(raw, list):
+                    answer = " ".join(b["text"] for b in raw if isinstance(b, dict) and b.get("type") == "text")
+                else:
+                    answer = str(raw)
 
             def update():
                 self.state.messages.append(TuiMessage(role="agent", content=answer))
@@ -158,6 +161,8 @@ class RaglessApp(App):
         except Exception as e:
             def update_error():
                 self.state.streaming = False
+                tb = traceback.format_exc()
                 log.write(f"\n  [red]✗ Error: {e}[/red]")
+                log.write(f"  [dim]{tb}[/dim]")
                 self._update_context_bar()
             self.call_from_thread(update_error)
