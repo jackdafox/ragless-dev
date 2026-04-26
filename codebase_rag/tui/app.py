@@ -14,6 +14,9 @@ from textual import on
 
 from .state import TUIState, Message as TuiMessage
 
+# Whether to stream output (default: enabled)
+_STREAM_OUTPUT = True
+
 
 class RaglessApp(App):
     """Terminal TUI for ragless-dev — built with Textual."""
@@ -112,29 +115,54 @@ class RaglessApp(App):
         t.start()
 
     def _run_query_in_thread(self, query: str, log: RichLog):
+        import traceback
         try:
             from codebase_rag.dev.coordinator import DevCoordinator
+
             coordinator = DevCoordinator(root=self.root)
-            result = coordinator.handle_query(query)
-            ctx = coordinator.get_context(query)
+            ctx = coordinator.get_context(query, skip_final_response=True)
+
+            # Get retrieval_context and do final response ourselves (non-streaming)
+            from langchain_core.messages import HumanMessage
+            from codebase_rag.dev.llm import get_llm
+
+            retrieval_context = ctx.get("retrieval_context", "")
+            answer = retrieval_context
+            if retrieval_context:
+                llm = get_llm()
+                response = llm.invoke([HumanMessage(content=(
+                    "You are a helpful coding assistant. Based on the following "
+                    "codebase information, answer the user's query in a friendly, "
+                    "concise way. If no relevant code was found, say so.\n\n"
+                    f"Query: {query}\n\n"
+                    f"Codebase context:\n{retrieval_context}\n\n"
+                    "Answer:"
+                ))])
+
+                raw = response.content if hasattr(response, "content") else str(response)
+                if isinstance(raw, list):
+                    answer = " ".join(b["text"] for b in raw if isinstance(b, dict) and b.get("type") == "text")
+                else:
+                    answer = str(raw)
 
             def update():
-                self.state.messages.append(TuiMessage(role="agent", content=result))
+                self.state.messages.append(TuiMessage(role="agent", content=answer))
                 self.state.streaming = False
                 self.state.discovered_files = ctx.get("discovered_files", [])
                 self.state.extracted_signatures = ctx.get("extracted_signatures", [])
                 self.state.step = ctx.get("step", 0)
                 log.write("")
-                for line in result.split("\n")[:20]:
+                for line in answer.split("\n"):
                     log.write(f"  [blue]▌[/blue] {line}")
-                if len(result.split("\n")) > 20:
-                    log.write(f"  [dim]▌ ... ({len(result.split(chr(10)))-20} more lines)[/dim]")
                 self._update_context_bar()
 
             self.call_from_thread(update)
+
         except Exception as e:
             def update_error():
                 self.state.streaming = False
+                tb = traceback.format_exc()
                 log.write(f"\n  [red]✗ Error: {e}[/red]")
+                log.write(f"  [dim]{tb}[/dim]")
                 self._update_context_bar()
             self.call_from_thread(update_error)

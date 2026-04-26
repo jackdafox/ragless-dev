@@ -187,6 +187,8 @@ def test_graph_state_schema():
         "extracted_signatures": [],
         "full_files": {},
         "retrieval_context": "",
+        "final_response": "",
+        "skip_final_response": False,
         "needs_more_files": False,
         "replan_reason": "",
         "step": 0,

@@ -19,6 +19,9 @@ MAX_STEPS = 3
 # Cached agent — built once per process
 _agent = None
 
+# Streaming callback — prints chunks to stderr as they arrive
+_stream_callback = os.environ.get("STREAM_OUTPUT", "1") == "1"
+
 
 def _get_agent():
     global _agent
@@ -88,7 +91,7 @@ def build_retrieval_context_node(state: RagDevState) -> dict:
 
 
 def agent_node(state: RagDevState) -> dict:
-    """Run the ReAct agent with current context."""
+    """Run the ReAct agent with current context, streaming output to stderr."""
     def _run(state):
         agent = _get_agent()
 
@@ -98,12 +101,28 @@ def agent_node(state: RagDevState) -> dict:
             "request_file_discovery. If you have enough context, give a direct answer."
         )
 
-        response = agent.invoke({
-            "messages": [
-                HumanMessage(content=systemPrompt),
-                *state["messages"],
-            ]
-        })
+        input_messages = [
+            HumanMessage(content=systemPrompt),
+            *state["messages"],
+        ]
+
+        if _stream_callback:
+            # Stream agent output as it generates
+            chunks = []
+            for event in agent.stream({"messages": input_messages}):
+                for node_name, node_output in event.items():
+                    if hasattr(node_output, "messages"):
+                        for msg in node_output.messages:
+                            if hasattr(msg, "content") and msg.content:
+                                text = str(msg.content)
+                                if text.strip():
+                                    print(f"[agent] {text}", end="", flush=True, file=os.sys.stderr)
+                                    chunks.append(text)
+            print(flush=True, file=os.sys.stderr)
+            # Get final result
+            response = agent.invoke({"messages": input_messages})
+        else:
+            response = agent.invoke({"messages": input_messages})
 
         return {"messages": response["messages"]}
     return _timeit("agent_node", _run, state)
@@ -139,7 +158,33 @@ def replan_node(state: RagDevState) -> dict:
 
 
 def final_response_node(state: RagDevState) -> dict:
+    """Generate a natural language response from the retrieval context using streaming."""
     def _run(state):
+        # Skip if TUI is handling its own streaming
+        if state.get("skip_final_response"):
+            return {"final_response": ""}
+
+        from .llm import get_llm
         retrieval_context = state.get("retrieval_context", "")
-        return {"retrieval_context": retrieval_context}
+        query = state.get("query", "")
+
+        llm = get_llm()
+        prompt = (
+            "You are a helpful coding assistant. Based on the following "
+            "codebase information, answer the user's query in a friendly, "
+            "concise way. If no relevant code was found, say so.\n\n"
+            f"Query: {query}\n\n"
+            f"Codebase context:\n{retrieval_context}\n\n"
+            "Answer:"
+        )
+
+        response = llm.invoke([HumanMessage(content=prompt)])
+        raw = response.content if hasattr(response, "content") else str(response)
+        if isinstance(raw, list):
+            answer = " ".join(b["text"] for b in raw if isinstance(b, dict) and b.get("type") == "text")
+        else:
+            answer = str(raw)
+
+        return {"final_response": answer}
+
     return _timeit("final_response_node", _run, state)

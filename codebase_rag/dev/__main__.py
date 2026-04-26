@@ -33,11 +33,15 @@ def main() -> int:
     if args.print_context:
         print(state.get("retrieval_context", ""))
     else:
-        sigs = state.get("extracted_signatures", [])
-        full = state.get("full_files", {})
-        print(f"Found {len(sigs)} signatures across {len(full)} files")
-        for sig in sigs:
-            print(f"  {sig.file_path}:{sig.start_line} {sig.name}({', '.join(sig.params)})")
+        final = state.get("final_response", "")
+        if final:
+            print(final)
+        else:
+            # Fallback for cached states without final_response
+            sigs = state.get("extracted_signatures", [])
+            print(f"Found {len(sigs)} signatures")
+            for sig in sigs:
+                print(f"  {sig.file_path}:{sig.start_line} {sig.name}({', '.join(sig.params)})")
 
     return 0
 
