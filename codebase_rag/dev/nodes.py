@@ -91,7 +91,7 @@ def build_retrieval_context_node(state: RagDevState) -> dict:
 
 
 def agent_node(state: RagDevState) -> dict:
-    """Run the ReAct agent with current context."""
+    """Run the ReAct agent with current context, streaming output to stderr."""
     def _run(state):
         agent = _get_agent()
 
@@ -101,12 +101,28 @@ def agent_node(state: RagDevState) -> dict:
             "request_file_discovery. If you have enough context, give a direct answer."
         )
 
-        response = agent.invoke({
-            "messages": [
-                HumanMessage(content=systemPrompt),
-                *state["messages"],
-            ]
-        })
+        input_messages = [
+            HumanMessage(content=systemPrompt),
+            *state["messages"],
+        ]
+
+        if _stream_callback:
+            # Stream agent output as it generates
+            chunks = []
+            for event in agent.stream({"messages": input_messages}):
+                for node_name, node_output in event.items():
+                    if hasattr(node_output, "messages"):
+                        for msg in node_output.messages:
+                            if hasattr(msg, "content") and msg.content:
+                                text = str(msg.content)
+                                if text.strip():
+                                    print(f"[agent] {text}", end="", flush=True, file=os.sys.stderr)
+                                    chunks.append(text)
+            print(flush=True, file=os.sys.stderr)
+            # Get final result
+            response = agent.invoke({"messages": input_messages})
+        else:
+            response = agent.invoke({"messages": input_messages})
 
         return {"messages": response["messages"]}
     return _timeit("agent_node", _run, state)

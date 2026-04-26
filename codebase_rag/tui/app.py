@@ -117,56 +117,43 @@ class RaglessApp(App):
     def _run_query_in_thread(self, query: str, log: RichLog):
         try:
             from codebase_rag.dev.coordinator import DevCoordinator
-            from langchain_core.messages import HumanMessage
-            from codebase_rag.dev.llm import get_llm
 
             coordinator = DevCoordinator(root=self.root)
             ctx = coordinator.get_context(query, skip_final_response=True)
 
-            # Stream the final_response in real-time to the log
-            if _STREAM_OUTPUT:
-                llm = get_llm()
-                retrieval_context = ctx.get("retrieval_context", "")
-                prompt = (
-                    "You are a helpful coding assistant. Based on the following "
-                    "codebase information, answer the user's query in a friendly, "
-                    "concise way. If no relevant code was found, say so.\n\n"
-                    f"Query: {query}\n\n"
-                    f"Codebase context:\n{retrieval_context}\n\n"
-                    "Answer:"
-                )
+            # Get retrieval_context and do final response ourselves (non-streaming)
+            from langchain_core.messages import HumanMessage
+            from codebase_rag.dev.llm import get_llm
 
-                chunks = []
-                def flush():
-                    def _flush():
-                        self.state.streaming = False
-                        self.state.discovered_files = ctx.get("discovered_files", [])
-                        self.state.extracted_signatures = ctx.get("extracted_signatures", [])
-                        self.state.step = ctx.get("step", 0)
-                        self._update_context_bar()
-                    self.call_from_thread(_flush)
+            retrieval_context = ctx.get("retrieval_context", "")
+            llm = get_llm()
+            response = llm.invoke([HumanMessage(content=(
+                "You are a helpful coding assistant. Based on the following "
+                "codebase information, answer the user's query in a friendly, "
+                "concise way. If no relevant code was found, say so.\n\n"
+                f"Query: {query}\n\n"
+                f"Codebase context:\n{retrieval_context}\n\n"
+                "Answer:"
+            ))])
 
-                for chunk in llm.stream([HumanMessage(content=prompt)]):
-                    if hasattr(chunk, "content") and chunk.content:
-                        text = chunk.content if isinstance(chunk.content, str) else ""
-                        if text:
-                            def write_line():
-                                log.write(f"  [blue]▌[/blue] {text}")
-                            self.call_from_thread(write_line)
+            raw = response.content if hasattr(response, "content") else str(response)
+            if isinstance(raw, list):
+                answer = " ".join(b["text"] for b in raw if isinstance(b, dict) and b.get("type") == "text")
             else:
-                answer = ctx.get("final_response") or ctx.get("retrieval_context", "")
+                answer = str(raw)
 
-                def update_no_stream():
-                    self.state.messages.append(TuiMessage(role="agent", content=answer))
-                    self.state.streaming = False
-                    self.state.discovered_files = ctx.get("discovered_files", [])
-                    self.state.extracted_signatures = ctx.get("extracted_signatures", [])
-                    self.state.step = ctx.get("step", 0)
-                    log.write("")
-                    for line in answer.split("\n"):
-                        log.write(f"  [blue]▌[/blue] {line}")
-                    self._update_context_bar()
-                self.call_from_thread(update_no_stream)
+            def update():
+                self.state.messages.append(TuiMessage(role="agent", content=answer))
+                self.state.streaming = False
+                self.state.discovered_files = ctx.get("discovered_files", [])
+                self.state.extracted_signatures = ctx.get("extracted_signatures", [])
+                self.state.step = ctx.get("step", 0)
+                log.write("")
+                for line in answer.split("\n"):
+                    log.write(f"  [blue]▌[/blue] {line}")
+                self._update_context_bar()
+
+            self.call_from_thread(update)
 
         except Exception as e:
             def update_error():
