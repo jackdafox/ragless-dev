@@ -125,10 +125,8 @@ class RaglessApp(App):
                 self.state.extracted_signatures = ctx.get("extracted_signatures", [])
                 self.state.step = ctx.get("step", 0)
                 log.write("")
-                for line in answer.split("\n")[:20]:
+                for line in answer.split("\n"):
                     log.write(f"  [blue]▌[/blue] {line}")
-                if len(answer.split("\n")) > 20:
-                    log.write(f"  [dim]▌ ... ({len(answer.split(chr(10)))-20} more lines)[/dim]")
                 self._update_context_bar()
 
             self.call_from_thread(update)
