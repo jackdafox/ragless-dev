@@ -106,6 +106,19 @@ class RaglessApp(App):
             parts.append(f"[dim]📁 {fps}[/dim]")
         bar.update("  ".join(parts))
 
+    def _on_step_update(self, step: int, discovered_files: list, extracted_signatures: list, agent_output: str = ""):
+        """Called by the worker thread to report progress."""
+        def _update():
+            self.state.step = step
+            self.state.discovered_files = discovered_files
+            self.state.extracted_signatures = extracted_signatures
+            self._update_context_bar()
+            if agent_output:
+                log = self.query_one("#conversation", RichLog)
+                for line in agent_output.split("\n")[:5]:
+                    log.write(f"  [dim]▌ {line}[/dim]")
+        self.call_from_thread(_update)
+
     def _process_query(self, query: str, log: RichLog):
         self.state.streaming = True
         log.write("[yellow]◐[/yellow] processing…")
@@ -120,30 +133,49 @@ class RaglessApp(App):
             from codebase_rag.dev.coordinator import DevCoordinator
 
             coordinator = DevCoordinator(root=self.root)
+
+            # Run graph first — this does file discovery + agent reasoning
+            # (with skip_final_response=True so we do the final LLM call ourselves)
             ctx = coordinator.get_context(query, skip_final_response=True)
 
-            # Get retrieval_context and do final response ourselves (non-streaming)
+            def report_progress():
+                self.call_from_thread(lambda: self._update_context_bar())
+
+            # Report step progress as graph completes
+            self.call_from_thread(lambda: self._update_context_bar())
+
+            # Now do the final LLM call and stream it line by line
             from langchain_core.messages import HumanMessage
             from codebase_rag.dev.llm import get_llm
 
             retrieval_context = ctx.get("retrieval_context", "")
-            answer = retrieval_context
-            if retrieval_context:
-                llm = get_llm()
-                response = llm.invoke([HumanMessage(content=(
-                    "You are a helpful coding assistant. Based on the following "
-                    "codebase information, answer the user's query in a friendly, "
-                    "concise way. If no relevant code was found, say so.\n\n"
-                    f"Query: {query}\n\n"
-                    f"Codebase context:\n{retrieval_context}\n\n"
-                    "Answer:"
-                ))])
+            if not retrieval_context:
+                retrieval_context = "(no relevant code found)"
 
-                raw = response.content if hasattr(response, "content") else str(response)
-                if isinstance(raw, list):
-                    answer = " ".join(b["text"] for b in raw if isinstance(b, dict) and b.get("type") == "text")
-                else:
-                    answer = str(raw)
+            answer_lines = []
+            llm = get_llm()
+            prompt = (
+                "You are a helpful coding assistant. Based on the following "
+                "codebase information, answer the user's query in a friendly, "
+                "concise way. If no relevant code was found, say so.\n\n"
+                f"Query: {query}\n\n"
+                f"Codebase context:\n{retrieval_context}\n\n"
+                "Answer:"
+            )
+
+            for chunk in llm.stream([HumanMessage(content=prompt)]):
+                if hasattr(chunk, "content") and chunk.content:
+                    text = chunk.content if isinstance(chunk.content, str) else ""
+                    if text:
+                        answer_lines.append(text)
+
+                        def write_chunk():
+                            log.write(f"  [blue]▌[/blue] {text}")
+                        self.call_from_thread(write_chunk)
+
+            answer = "".join(answer_lines)
+            if not answer:
+                answer = retrieval_context
 
             def update():
                 self.state.messages.append(TuiMessage(role="agent", content=answer))
@@ -151,9 +183,6 @@ class RaglessApp(App):
                 self.state.discovered_files = ctx.get("discovered_files", [])
                 self.state.extracted_signatures = ctx.get("extracted_signatures", [])
                 self.state.step = ctx.get("step", 0)
-                log.write("")
-                for line in answer.split("\n"):
-                    log.write(f"  [blue]▌[/blue] {line}")
                 self._update_context_bar()
 
             self.call_from_thread(update)
