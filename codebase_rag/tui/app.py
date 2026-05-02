@@ -133,26 +133,28 @@ class RaglessApp(App):
             from codebase_rag.dev.coordinator import DevCoordinator
 
             coordinator = DevCoordinator(root=self.root)
+            ctx = {}
 
-            # Run graph first — this does file discovery + agent reasoning
-            # (with skip_final_response=True so we do the final LLM call ourselves)
+            def report(step_info: str = ""):
+                def _r():
+                    self._update_context_bar()
+                    if step_info:
+                        log.write(f"  [dim]→ {step_info}[/dim]")
+                self.call_from_thread(_r)
+
+            # Stage 1: file discovery
+            report("discovering files…")
             ctx = coordinator.get_context(query, skip_final_response=True)
+            report("files found")
 
-            def report_progress():
-                self.call_from_thread(lambda: self._update_context_bar())
-
-            # Report step progress as graph completes
-            self.call_from_thread(lambda: self._update_context_bar())
-
-            # Now do the final LLM call and stream it line by line
+            # Stage 2: final LLM response — stream to log as it arrives
             from langchain_core.messages import HumanMessage
             from codebase_rag.dev.llm import get_llm
 
-            retrieval_context = ctx.get("retrieval_context", "")
-            if not retrieval_context:
-                retrieval_context = "(no relevant code found)"
+            retrieval_context = ctx.get("retrieval_context", "") or "(no relevant code found)"
+            report("generating response…")
 
-            answer_lines = []
+            answer_parts = []
             llm = get_llm()
             prompt = (
                 "You are a helpful coding assistant. Based on the following "
@@ -167,15 +169,13 @@ class RaglessApp(App):
                 if hasattr(chunk, "content") and chunk.content:
                     text = chunk.content if isinstance(chunk.content, str) else ""
                     if text:
-                        answer_lines.append(text)
+                        answer_parts.append(text)
 
-                        def write_chunk():
-                            log.write(f"  [blue]▌[/blue] {text}")
+                        def write_chunk(t=text):
+                            log.write(f"  [blue]▌[/blue] {t}")
                         self.call_from_thread(write_chunk)
 
-            answer = "".join(answer_lines)
-            if not answer:
-                answer = retrieval_context
+            answer = "".join(answer_parts) or retrieval_context
 
             def update():
                 self.state.messages.append(TuiMessage(role="agent", content=answer))
