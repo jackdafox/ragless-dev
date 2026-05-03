@@ -2092,4 +2092,4 @@ dev = ["pip-audit", "pytest", "pytest-asyncio"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "321ddfc7c8aa872dfbe5e0d137d7079a1bd57d73e43988ccd1743ce8e81fa934"
+content-hash = "adafa675cefcd83786bbbe5dadaa2379d9584e64963ba74ade3088faae43dc41"
