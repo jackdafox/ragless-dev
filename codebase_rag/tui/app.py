@@ -11,12 +11,12 @@ from textual.containers import VerticalScroll, Container
 from textual.binding import Binding
 from textual.message import Message
 from textual import on
+from rich.markdown import Markdown
 
 from .state import TUIState, Message as TuiMessage
 
 # Whether to stream output (default: enabled)
 _STREAM_OUTPUT = True
-
 
 class RaglessApp(App):
     """Terminal TUI for ragless-dev — built with Textual."""
@@ -172,7 +172,7 @@ class RaglessApp(App):
                         answer_parts.append(text)
 
                         def write_chunk(t=text):
-                            log.write(f"  [blue]▌[/blue] {t}")
+                            log.write(f"{t}")
                         self.call_from_thread(write_chunk)
 
             answer = "".join(answer_parts) or retrieval_context
@@ -183,6 +183,8 @@ class RaglessApp(App):
                 self.state.discovered_files = ctx.get("discovered_files", [])
                 self.state.extracted_signatures = ctx.get("extracted_signatures", [])
                 self.state.step = ctx.get("step", 0)
+                log.write("")
+                log.write(Markdown(answer))
                 self._update_context_bar()
 
             self.call_from_thread(update)
